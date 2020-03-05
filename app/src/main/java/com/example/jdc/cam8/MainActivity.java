@@ -8,7 +8,9 @@ import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.graphics.ImageFormat;
+import android.graphics.Paint;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -20,6 +22,7 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
+import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -28,6 +31,7 @@ import android.os.HandlerThread;
 import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
+import android.view.KeyEvent;
 import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
@@ -61,13 +65,15 @@ public class MainActivity extends AppCompatActivity {
     private CaptureRequest.Builder mBuilder;
     private CameraCaptureSession mCameraCaptureSession;
     private Surface surface;
+    private SurfaceTexture surfaceTexture;
+    private Uri uri;
 
-    private Button button_capture,button_album,button_distance,button_exposure,button_gain;
-    private SeekBar seekBar_distance,seekBar_exposure,seekBar_gain;
-    private int FLAG_DISTANCE=0,FLAG_EXPOSURE=0,FLAG_GAIN=0;
+    private Button button_capture,button_album,button_distance,button_exposure,button_gain,button_iso,button_switch;
+    private SeekBar seekBar;
+    private int FLAG_DISTANCE=0,FLAG_EXPOSURE=0,FLAG_GAIN=0,FLAG_ISO=0;
     private int SELECT_PHOTO = 1;
 
-    private float distance;
+    private int seekBar_value;
 
     private static final SparseIntArray ORIENTATION = new SparseIntArray();
     static {
@@ -83,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         getSupportActionBar().hide(); //before AppCompat.V7 use "getActionBar()".
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().setNavigationBarColor(Color.parseColor("#000000"));
 
 
         initPermission();
@@ -91,9 +98,32 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onUserLeaveHint() {
+        Log.d(TAG, "onUserLeaveHint: home");
+        closeCamera();
+        super.onUserLeaveHint();
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        switch (keyCode){
+            case KeyEvent.KEYCODE_BACK:
+                Log.d(TAG, "onKeyDown: back");
+                closeCamera();
+                break;
+            case KeyEvent.KEYCODE_APP_SWITCH:
+                Log.d(TAG, "onKeyDown: task");
+                closeCamera();
+                break;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
     protected void onRestart() {
         super.onRestart();
         openCamera();
+        Log.d(TAG, "onRestart: "+mDevice);
     }
 
     private void initPermission() {
@@ -128,13 +158,11 @@ public class MainActivity extends AppCompatActivity {
 
             }
         });
-        seekBar_gain = findViewById(R.id.seekBar_gain);
-        seekBar_exposure = findViewById(R.id.seekBar_exposure);
-        seekBar_distance = findViewById(R.id.seekBar_distance);
-        seekBar_distance.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+        seekBar = findViewById(R.id.seekBar);
+        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                distance = (float)progress;
+                seekBar_value = progress;
             }
 
             @Override
@@ -146,8 +174,17 @@ public class MainActivity extends AppCompatActivity {
             public void onStopTrackingTouch(SeekBar seekBar) {
                 try {
                     mCameraCaptureSession.stopRepeating();
-//                    mBuilder.set(CaptureRequest.LENS_FOCUS_DISTANCE, distance);
-                    Log.d(TAG, "onStopTrackingTouch: "+distance);
+                    if(FLAG_DISTANCE==1){
+                        mBuilder.set(CaptureRequest.LENS_FOCUS_DISTANCE, (float)seekBar_value);
+                    }else if(FLAG_EXPOSURE==1){
+                        mBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, (long)seekBar_value*10000);
+                    }else if(FLAG_GAIN==1){
+                        mBuilder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, seekBar_value);
+                    }else if(FLAG_ISO==1){
+                        mBuilder.set(CaptureRequest.SENSOR_SENSITIVITY, seekBar_value);
+                    }
+                    Log.d(TAG, "onStopTrackingTouch: "+seekBar_value);
+                    Log.d(TAG, "onStopTrackingTouch: "+mDevice);
                     mDevice.createCaptureSession(Arrays.asList(surface, setupImageReader()), new CameraCaptureSession.StateCallback() {
                         @Override
                         public void onConfigured(@NonNull CameraCaptureSession session) {
@@ -181,6 +218,10 @@ public class MainActivity extends AppCompatActivity {
         button_exposure.setOnClickListener(clickListener);
         button_gain =findViewById(R.id.button_gain);
         button_gain.setOnClickListener(clickListener);
+        button_iso = findViewById(R.id.button_iso);
+        button_iso.setOnClickListener(clickListener);
+        button_switch = findViewById(R.id.button_switch);
+        button_switch.setOnClickListener(clickListener);
     }
 
     View.OnClickListener clickListener = new View.OnClickListener() {
@@ -192,36 +233,64 @@ public class MainActivity extends AppCompatActivity {
                     lockFocus();
                     break;
                 case R.id.button_distance:
-                    if(FLAG_DISTANCE==1){
-                        seekBar_distance.setVisibility(View.INVISIBLE);
-                        FLAG_DISTANCE=0;
-                    }else{
-                        seekBar_distance.setVisibility(View.VISIBLE);
+                    if(FLAG_DISTANCE==0){
+                        seekBar.setMax(10);
+                        seekBar.setMin(0);
+                        Log.d(TAG, "onClick: "+seekBar.getScrollBarStyle());
+                        seekBar.setVisibility(View.VISIBLE);
                         FLAG_DISTANCE=1;
-                        
+                        FLAG_GAIN=0;
+                        FLAG_EXPOSURE=0;
+                        FLAG_ISO=0;
+                    }else{
+                        seekBar.setVisibility(View.INVISIBLE);
+                        FLAG_DISTANCE=0;
                     }
                     break;
                 case R.id.button_exposure:
-                    if(FLAG_EXPOSURE==1){
-                        seekBar_exposure.setVisibility(View.INVISIBLE);
-                        FLAG_EXPOSURE=0;
-                    }else{
-                        seekBar_exposure.setVisibility(View.VISIBLE);
+                    if(FLAG_EXPOSURE==0){
+                        seekBar.setMax(10000);
+                        seekBar.setMin(1);
+                        seekBar.setVisibility(View.VISIBLE);
                         FLAG_EXPOSURE=1;
-//                        FLAG_GAIN=0;
-//                        FLAG_DISTANCE=0;
+                        FLAG_GAIN=0;
+                        FLAG_DISTANCE=0;
+                        FLAG_ISO=0;
+                    }else{
+                        seekBar.setVisibility(View.INVISIBLE);
+                        FLAG_EXPOSURE=0;
                     }
                     break;
                 case R.id.button_gain:
-                    if(FLAG_GAIN==1){
-                        seekBar_gain.setVisibility(View.INVISIBLE);
-                        FLAG_GAIN=0;
-                    }else{
-                        seekBar_gain.setVisibility(View.VISIBLE);
+                    if(FLAG_GAIN==0){
+                        seekBar.setMax(4);
+                        seekBar.setMin(-4);
+                        seekBar.setVisibility(View.VISIBLE);
                         FLAG_GAIN=1;
+                        FLAG_EXPOSURE=0;
+                        FLAG_DISTANCE=0;
+                        FLAG_ISO=0;
+                    }else{
+                        seekBar.setVisibility(View.INVISIBLE);
+                        FLAG_GAIN=0;
+                    }
+                    break;
+                case R.id.button_iso:
+                    if(FLAG_ISO==0){
+                        seekBar.setMax(3500);
+                        seekBar.setMin(0);
+                        seekBar.setVisibility(View.VISIBLE);
+                        FLAG_ISO=1;
+                        FLAG_GAIN=0;
+                        FLAG_EXPOSURE=0;
+                        FLAG_DISTANCE=0;
+                    }else{
+                        seekBar.setVisibility(View.INVISIBLE);
+                        FLAG_ISO=0;
                     }
                     break;
                 case R.id.button_album:
+                    closeCamera();
                     Intent intent = new Intent();
                     intent.setType("image/*");// 开启Pictures画面Type设定为image
                     intent.setAction(Intent.ACTION_GET_CONTENT);
@@ -233,10 +302,12 @@ public class MainActivity extends AppCompatActivity {
 
     public void openCamera() {
         CameraManager manager = (CameraManager)getSystemService(Context.CAMERA_SERVICE);
+        Log.d(TAG, "openCamera: "+manager);
         try {
             CameraCharacteristics characteristics = manager.getCameraCharacteristics(CameraId);
             StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             previewSize = getOptimalSize(map.getOutputSizes(SurfaceTexture.class), mTextureView.getWidth(), mTextureView.getHeight());
+            Log.d(TAG, "openCamera: "+previewSize);
             mCaptureSize = Collections.max(Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)), new Comparator<Size>() {
                 @Override
                 public int compare(Size o1, Size o2) {
@@ -255,6 +326,7 @@ public class MainActivity extends AppCompatActivity {
     private CameraDevice.StateCallback mCameraCallback = new CameraDevice.StateCallback() {
         @Override
         public void onOpened(@NonNull CameraDevice camera) {
+            Log.d(TAG, "onOpened: "+camera);
             mDevice = camera;
             startPreview();
         }
@@ -262,18 +334,20 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onDisconnected(@NonNull CameraDevice camera) {
             camera.close();
+            Log.d(TAG, "onDisconnected: camera disconnected");
             mDevice = null;
         }
 
         @Override
         public void onError(@NonNull CameraDevice camera, int error) {
             camera.close();
+            Log.d(TAG, "onError: camera Error");
             mDevice = null;
         }
     };
 
     private void startPreview() {
-        SurfaceTexture surfaceTexture = mTextureView.getSurfaceTexture();
+        surfaceTexture = mTextureView.getSurfaceTexture();
         surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
         surface = new Surface(surfaceTexture);
         try {
@@ -281,8 +355,8 @@ public class MainActivity extends AppCompatActivity {
             mBuilder.addTarget(surface);
             mBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
             mBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF);
+
 //            mBuilder.set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_OFF);
-            mBuilder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF);
             Log.d(TAG, "startPreview: 111111");
             mDevice.createCaptureSession(Arrays.asList(surface, setupImageReader()), new CameraCaptureSession.StateCallback() {
                 @Override
@@ -341,8 +415,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void unlockFocus() {
         try {
-            mBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
-            mBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
             mCameraCaptureSession.setRepeatingRequest(mCaptureRequest, null, cameraHandler());
         } catch (CameraAccessException e) {
 
@@ -351,14 +423,17 @@ public class MainActivity extends AppCompatActivity {
 
     public void closeCamera() {
         if (mCameraCaptureSession != null) {
+            Log.d(TAG, "closeCamera: captureSession close");
             mCameraCaptureSession.close();
             mCameraCaptureSession = null;
         }
         if (mDevice != null) {
+            Log.d(TAG, "closeCamera: device close");
             mDevice.close();
             mDevice = null;
         }
         if (mImageReader != null) {
+            Log.d(TAG, "closeCamera: ImageReader close");
             mImageReader.close();
             mImageReader = null;
         }
@@ -377,7 +452,35 @@ public class MainActivity extends AppCompatActivity {
         mImageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
             @Override
             public void onImageAvailable(ImageReader reader) {
-                cameraHandler().post(new imageSaver(mImageReader.acquireNextImage()));
+                Image mImage = reader.acquireNextImage();
+                ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
+                byte[] data = new byte[buffer.remaining()];
+                buffer.get(data);
+                String path = Environment.getExternalStorageDirectory() + "/DCIM/Camera/";
+                File mImageFile = new File(path);
+                if (!mImageFile.exists()) {
+                    mImageFile.mkdir();
+                }
+                String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+                String fileName = path + "IMG_" + timeStamp + ".jpg";
+                FileOutputStream fos = null;
+                try {
+                    fos = new FileOutputStream(fileName);
+                    fos.write(data, 0, data.length);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                } finally {
+                    if (fos != null) {
+                        try {
+                            fos.close();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    mImage.close(); //must close.
+                }
+                uri = Uri.fromFile(new File(fileName));
+                sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, uri));
             }
         }, null);
 
@@ -417,45 +520,10 @@ public class MainActivity extends AppCompatActivity {
         }
         return sizeMap[0];
     }
-
-
-    public static class imageSaver implements Runnable { //创建照片保存的线程
-        private Image mImage;
-        public Uri uri;
-
-        public imageSaver(Image image) {
-            mImage = image;
-        }
-
-        @Override
-        public void run() {
-            ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
-            byte[] data = new byte[buffer.remaining()];
-            buffer.get(data);
-            String path = Environment.getExternalStorageDirectory() + "/DCIM/Camera/";
-            File mImageFile = new File(path);
-            if (!mImageFile.exists()) {
-                mImageFile.mkdir();
-            }
-            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-            String fileName = path + "IMG_" + timeStamp + ".jpg";
-            FileOutputStream fos = null;
-            try {
-                fos = new FileOutputStream(fileName);
-                fos.write(data, 0, data.length);
-            } catch (IOException e) {
-                e.printStackTrace();
-            } finally {
-                if (fos != null) {
-                    try {
-                        fos.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                mImage.close(); //must close.
-            }
-            uri = Uri.fromFile(new File(fileName));
+    private void delay(int ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
 
         }
     }

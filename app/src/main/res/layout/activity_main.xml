@@ -9,9 +9,13 @@
     android:id="@+id/frame_main"
     >
     <Button
+        android:background="@drawable/ic_photo_library_black_24dp"
         android:id="@+id/button_album"
-        android:layout_width="70dp"
-        android:layout_height="50dp"/>
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_marginBottom="10dp"
+        android:layout_marginLeft="10dp"
+        />
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent">
@@ -21,34 +25,10 @@
             android:layout_height="492dp" />
 
         <SeekBar
-            android:id="@+id/seekBar_distance"
-            style="@android:style/Widget.Material.SeekBar.Discrete"
+            android:id="@+id/seekBar"
             android:layout_width="match_parent"
             android:layout_height="40dp"
             android:layout_above="@+id/linearLayout_below"
-            android:max="10"
-            android:min="0"
-            android:outlineSpotShadowColor="#FFFFFF"
-            android:visibility="invisible" />
-
-        <SeekBar
-            android:id="@+id/seekBar_exposure"
-            style="@android:style/Widget.Material.SeekBar"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_above="@+id/linearLayout_below"
-            android:max="1000000000"
-            android:min="10000"
-            android:outlineSpotShadowColor="#FFFFFF"
-            android:visibility="invisible" />
-        <SeekBar
-            android:id="@+id/seekBar_gain"
-            style="@android:style/Widget.Material.SeekBar.Discrete"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_above="@+id/linearLayout_below"
-            android:max="4"
-            android:min="-4"
             android:outlineSpotShadowColor="#FFFFFF"
             android:visibility="invisible" />
         <LinearLayout
@@ -58,26 +38,38 @@
             android:layout_height="wrap_content"
             android:layout_above="@+id/button_capture">
             <Button
-                android:text="FS"
-                android:textSize="20sp"
+                android:layout_weight="1"
+                android:text="F"
+                android:textSize="15sp"
                 android:textColor="#FFFFFF"
                 android:id="@+id/button_distance"
                 style="@style/Widget.AppCompat.Button.Borderless"
                 android:layout_width="50dp"
                 android:layout_height="50dp" />
             <Button
+                android:layout_weight="1"
                 android:text="S"
-                android:textSize="20sp"
+                android:textSize="15sp"
                 android:textColor="#FFFFFF"
                 android:id="@+id/button_exposure"
                 style="@style/Widget.AppCompat.Button.Borderless"
                 android:layout_width="50dp"
                 android:layout_height="50dp" />
             <Button
+                android:layout_weight="1"
                 android:text="EV"
-                android:textSize="20sp"
+                android:textSize="15sp"
                 android:textColor="#FFFFFF"
                 android:id="@+id/button_gain"
+                style="@style/Widget.AppCompat.Button.Borderless"
+                android:layout_width="50dp"
+                android:layout_height="50dp" />
+            <Button
+                android:layout_weight="1"
+                android:text="ISO"
+                android:textSize="15sp"
+                android:textColor="#FFFFFF"
+                android:id="@+id/button_iso"
                 style="@style/Widget.AppCompat.Button.Borderless"
                 android:layout_width="50dp"
                 android:layout_height="50dp" />
@@ -85,11 +77,22 @@
         <Button
             android:id="@+id/button_capture"
             style="@style/Widget.AppCompat.Button"
-            android:layout_width="50dp"
-            android:layout_height="50dp"
+            android:layout_width="55dp"
+            android:layout_height="55dp"
             android:layout_below="@+id/textureView"
             android:layout_centerHorizontal="true"
-            android:layout_marginTop="30dp" />
+            android:layout_marginTop="30dp"
+            android:background="@drawable/ic_camera_black_24dp"/>
+        <Button
+            android:id="@+id/button_switch"
+            style="@style/Widget.AppCompat.Button"
+            android:layout_width="55dp"
+            android:layout_height="55dp"
+            android:layout_below="@+id/textureView"
+            android:layout_marginTop="30dp"
+            android:layout_alignParentRight="true"
+            android:layout_marginRight="40dp"
+            android:background="@drawable/ic_switch_black_24dp"/>
     </RelativeLayout>
 
 </LinearLayout>
